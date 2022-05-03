@@ -28,3 +28,5 @@ int main(int argc, char** argv)
     fclose(fp);
     return 0;
 }
+
+// note that this can take a while (like 20+ minutes) to generate 10,000,000+ random numbers, but that is what the lab writeup calls for
