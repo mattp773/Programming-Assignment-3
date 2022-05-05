@@ -18,7 +18,7 @@ int main(int argc, char** argv)
     for (i = 0; i < size; i++) {
         for (j = 0; j < 1000; j++) {
             x = (100 * (rand() / n));
-            if ((j + i) == (1003)) {
+            if ((j + i) == (size - 1 + 999)) {
                 fprintf(fp, "%f", x);
             } else {
                 fprintf(fp, "%f\n", x);

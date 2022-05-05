@@ -16,6 +16,7 @@ int main(int argc, char** argv)
     float sum = 0;
     float max_sum = 0;
     int size = 0;
+    int i;
 
     while (!feof(fp)) {
         fscanf(fp, "%f", &curr);
@@ -25,12 +26,12 @@ int main(int argc, char** argv)
 
     float* arr = malloc(sizeof(float) * size);
 
-    for (int i = 0; i < size; i++) {
+    for (i = 0; i < size; i++) {
         fscanf(fp, "%f", &arr[i]);
     }
 
     while (k + N <= size) {
-        for (int i = k; i < k + N; i++) {
+        for (i = k; i < k + N; i++) {
             sum += arr[i];
         }
         if (sum > max_sum) {
