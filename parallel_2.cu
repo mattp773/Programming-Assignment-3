@@ -4,40 +4,48 @@
 #include <math.h>
 #include <float.h>
 
-__global__ void prime(bool *is_prime, int N) {
+typedef struct nums {
+    int value;
+    bool isPrime;
+} nums;
+
+#define blockSize (256)
+
+__global__ void prime(struct nums *is_prime) {
     int id = threadIdx.x;
-    if(id < 2) {
-        is_prime[id] = false;
+    if(id == 0 || id == 1) {
+        is_prime[id].isPrime = false;
+        is_prime[id].value = 0;
+        return;
     }
-    else if(id == 2) {
-        is_prime[id] = true;
-    }
-    else {
-        for(int i = 2; i < N; i++) {
-            if(id % i == 0) {
-                is_prime[id] = false;
-                return;
-            }
+    for(int i = 2; i <= (int)sqrt((float)id); i++) {
+        if(id % i == 0) {
+            is_prime[id].isPrime = false;
+            is_prime[id].value = 0;
+            return;
         }
     }
+    
 }
 
-__global__ void sum_primes(bool *is_prime, float *sum, int N) {
+__global__ void sum_primes(struct nums *is_prime, float *sum, int N) {
     int id = threadIdx.x;
-    extern __shared__ float s[];
-    if(id == 0) {
-        s[id] = 0;
+    float sum_1 = 0;
+    for(int i = id; i < N; i+= blockSize) {
+        // printf("value at %d is %d\n", i, is_prime[i].value);
+        sum_1 += is_prime[i].value;
     }
-    else if(is_prime[id]) {
-        printf("%d is prime\n", id);
-        s[id] = s[id - 1] + id;
-    }
-    else {
-        s[id] = s[id - 1];
-    }
+    __shared__ float r[blockSize];
+    r[id] = sum_1;
     __syncthreads();
-    if(id == N - 1) {
-        *sum = s[id];
+    for(int size = blockSize/2; size > 0; size /= 2) {
+        if(id < size) {
+            r[id] += r[id + size];
+        }
+        __syncthreads();
+    }
+    if(id == 0) {
+        *sum = r[0];
     }
 }
 
@@ -47,32 +55,41 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     int N = atoi(argv[1]);
-    bool *is_prime = (bool *)malloc(N * sizeof(bool));
+    struct nums *is_prime = (nums *)malloc(N * sizeof(nums));
 
     for(int i = 0; i < N; i++) {
-        is_prime[i] = true;
+        is_prime[i].value = i;
+        // printf("is_prime[%d].value = %d\n", i, is_prime[i].value);
+        is_prime[i].isPrime = true;
     }
-    int limit = (int)sqrt(N);
+
+    
     float *sum = (float *)malloc(sizeof(float));
     *sum = 0;
     float *sum_gpu;
     cudaMalloc((void **)&sum_gpu, sizeof(float));
     cudaMemcpy(sum_gpu, sum, sizeof(float), cudaMemcpyHostToDevice);
 
-    bool *is_prime_gpu;
-    cudaMalloc(&is_prime_gpu, N * sizeof(bool));
-    cudaMemcpy(is_prime_gpu, is_prime, N * sizeof(bool), cudaMemcpyHostToDevice);
+    nums *is_prime_gpu;
+    cudaMalloc(&is_prime_gpu, N * sizeof(nums));
+    cudaMemcpy(is_prime_gpu, is_prime, N * sizeof(nums), cudaMemcpyHostToDevice);
 
-    prime<<<1,N>>>(is_prime_gpu, limit);
-    cudaMemcpy(is_prime, is_prime_gpu, N * sizeof(bool), cudaMemcpyDeviceToHost);
+    prime<<<1,N>>>(is_prime_gpu);
+    cudaMemcpy(is_prime, is_prime_gpu, N * sizeof(nums), cudaMemcpyDeviceToHost);
 
-    bool *is_prime_gpu_2;
-    cudaMalloc(&is_prime_gpu_2, N * sizeof(bool));
-    cudaMemcpy(is_prime_gpu_2, is_prime, N * sizeof(bool), cudaMemcpyDeviceToHost);
-    sum_primes<<<1,N,N>>>(is_prime_gpu, sum_gpu, N);
-    cudaMemcpy(sum, sum_gpu, sizeof(float), cudaMemcpyDeviceToHost);
+    for(int i = 0; i < N; i++) {
+       
+            // printf("%d is prime\n", is_prime[i].value);
+            *sum += is_prime[i].value;
+    }
 
-    printf("Sum of primes below %d: %f\n", N, *sum);
+    // nums *is_prime_gpu_2;
+    // cudaMalloc(&is_prime_gpu_2, N * sizeof(nums));
+    // cudaMemcpy(is_prime_gpu_2, is_prime, N * sizeof(nums), cudaMemcpyDeviceToHost);
+    // sum_primes<<<1,blockSize>>>(is_prime_gpu, sum_gpu, N);
+    // cudaMemcpy(sum, sum_gpu, sizeof(float), cudaMemcpyDeviceToHost);
+
+    printf("Sum of primes below %d: %.0f\n", N, *sum);
 
     // printf("Sum of primes: %f\n", sum);
 }
