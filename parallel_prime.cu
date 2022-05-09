@@ -1,126 +1,119 @@
-/* From: https://github.com/mvx24 
- * Find the sum of all primes below 2 million (Project Euler #10).
- * This can take a while! *spoiler* 142913828922
- * For below 2k: 277050 (0.09s via nvcc, 19 hours via kcc!)
- */
-
 #include <stdio.h>
-#include <cuda.h>
 #include <stdlib.h>
+#include <cuda.h> // automatically included when compiling with nvcc
 
 #define THREADS_PER_BLOCK 512
 
-// Kernel that executes on the CUDA device
-__global__ void sum_primes(int* firstPrimes, size_t n, unsigned long long* blockSums, int TOTAL_THREADS, int START_NUMBER) {
+// kernel executed on device (GPU)
+__global__ void sum_primes(int* primes, size_t n, unsigned long long* blockSums, int TOTAL_THREADS, int START_NUMBER) {
+      // shared array of primes between threads of same block
       __shared__ int blockPrimes[THREADS_PER_BLOCK];
-      int i;
-      int idx;
-      int num;
+      
+      // unique thread index determined by block dimensions
+      int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
-      idx = blockIdx.x * blockDim.x + threadIdx.x;
+      int i;
+      int num;
       if (idx < TOTAL_THREADS) {
-            // The number to test
-            // printf("idx: %d\n", idx);
             if(START_NUMBER % 2 != 0 ) {
                 num = START_NUMBER + (idx * 2);
             }
-            else
+            else {
                 num = (START_NUMBER - 1) + (idx * 2);
-            // printf("testing %d\n", num);
+            }
             for (i = 0; i < n; ++i) {
-                  if(!(num % firstPrimes[i])) break;
+                  if(!(num % primes[i])){ 
+                        break; 
+                  }
             }
             if (i == n) {
-                  blockPrimes[threadIdx.x] = num;
-                //   printf("%d is prime\n", num);
+                  blockPrimes[threadIdx.x] = num; //add in prime
             }
-            else
-                  blockPrimes[threadIdx.x] = 0;
-      } else {
+            else {
+                  blockPrimes[threadIdx.x] = 0; //not prime
+            }
+      } 
+      else {
             blockPrimes[threadIdx.x] = 0;
       }
 
-      __syncthreads();
+      __syncthreads(); // allows all threads of the block to "catch up"
 
       if (threadIdx.x == 0) {
-            // sum all the results from the block
+            // loop and add up prime results from the block
             blockSums[blockIdx.x] = 0;
-            for (i = 0; i < blockDim.x; ++i)
+            for (i = 0; i < blockDim.x; ++i){
                   blockSums[blockIdx.x] += blockPrimes[i];
+            }
       }
 }
 
-// main routine that executes on the host
+// main executed on host (CPU)
 int main(int argc, char *argv[]) {
-      //host
-
+      // input error checking
       if(argc != 2) {
             printf("Usage: %s <number>\n", argv[0]);
             return 1;
       }
 
+      // host variables
       int END_NUMBER = atoi(argv[1]);
       int START_NUMBER = (int)sqrt((double)END_NUMBER) + 1;
       const int n = pow(2, (ceil(log2(START_NUMBER)) + 1));
       const int TOTAL_THREADS = ((END_NUMBER + 2 - START_NUMBER) / 2);
 
-    //   printf("total threads: %d\n", TOTAL_THREADS);
-    //   printf("end number: %d\n", END_NUMBER);
-    //     printf("start number: %d\n", START_NUMBER);
-    //     printf("n: %d\n", n);
-
-    //   if(TOTAL_THREADS < 512) {
-    //     THREADS_PER_BLOCK = TOTAL_THREADS;
-    //   }
-
+      // host arrays
       int *primes = (int *)malloc((n + 1) * sizeof(int));
-
       unsigned long long *primeSums;
-      int i, j, index;
-      int blockSize, nblocks;
-      unsigned long long sum;
-      size_t len;
 
-      //device
+      // device arrays
       int* primesDevice;
       unsigned long long* primeSumsDevice;
 
-      // Find all the primes less than the square root of 2 million ~1414
+      // develop primes host array to be passed to device for computation
       primes[0] = 2;
-      index = 1;
-      sum = 2;
-      for (i = 3; i != START_NUMBER; ++i) {
+      int index = 1;
+      int j;
+      unsigned long long sum = 2;
+      for (int i = 3; i != START_NUMBER; ++i) {
             for (j = 0; j != index; ++j) {
                   if (!(i % primes[j])) break;
             }
             if (j == index) {
                   primes[index++] = i;
-                //   printf("%d is prime\n", i);
                   sum += i;
             }
       }
-      len = index;
+      size_t len = index;
 
+      // initialize GPU by setting block size and number of blocks
+      int blockSize = THREADS_PER_BLOCK;
+      int nblocks = TOTAL_THREADS/blockSize + !!(TOTAL_THREADS % blockSize);
+
+      // allocate prime numbers variable on device
       cudaMalloc((void**) &primesDevice, len * sizeof(int));
+
+      // copy prime numbers from host to device variable
       cudaMemcpy(primesDevice, primes, len * sizeof(int), cudaMemcpyHostToDevice);
 
-      blockSize = THREADS_PER_BLOCK;
-      nblocks = TOTAL_THREADS/blockSize + !!(TOTAL_THREADS % blockSize);
-    //   printf("nblocks: %d\n", nblocks);
-    //   printf("blockSize: %d\n", blockSize);
+      // allocate sum of prime numbers variable on device
       cudaMalloc((void**) &primeSumsDevice, nblocks * sizeof(unsigned long long));
 
+      // call the kernel with args
       sum_primes <<< nblocks, blockSize >>> (primesDevice, index, primeSumsDevice, TOTAL_THREADS, START_NUMBER);
 
-      // Retrieve result from device and store it in host array
+      // allocate sum of prime numbers variable on host
       primeSums = (unsigned long long*) malloc(nblocks * sizeof(unsigned long long));
+      
+      // copy results from device back to host
       cudaMemcpy(primeSums, primeSumsDevice, nblocks * sizeof(unsigned long long), cudaMemcpyDeviceToHost);
-      for (i = 0; i != nblocks; ++i) {
+      
+      // add up the prime sums in the array of prime sums produced by the device
+      for (int i = 0; i != nblocks; ++i) {
             sum += primeSums[i];
-            //printf("%llu\t", primeSums[i]);
       }
 
-      // Cleanup
+      // free allocated memory
       free(primeSums);
       cudaFree(primeSumsDevice);
       cudaFree(primesDevice);
