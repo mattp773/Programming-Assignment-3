@@ -78,6 +78,9 @@ int main(int argc, char *argv[]) {
       if(END_NUMBER < 3) {
             sum = 0;
       }
+      else if(END_NUMBER == 3) {
+            sum = 2;
+      }
       else {
             sum = 2;
             for (int i = 3; i < START_NUMBER; ++i) {
