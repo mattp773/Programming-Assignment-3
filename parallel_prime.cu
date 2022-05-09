@@ -74,50 +74,55 @@ int main(int argc, char *argv[]) {
       primes[0] = 2;
       int index = 1;
       int j;
-      unsigned long long sum = 2;
-      for (int i = 3; i != START_NUMBER; ++i) {
-            for (j = 0; j != index; ++j) {
-                  if (!(i % primes[j])) break;
-            }
-            if (j == index) {
-                  primes[index++] = i;
-                  sum += i;
-            }
+      unsigned long long sum = 0;
+      if(END_NUMBER < 3) {
+            sum = 0;
       }
-      size_t len = index;
+      else {
+            sum = 2;
+            for (int i = 3; i < START_NUMBER; ++i) {
+                  for (j = 0; j < index; ++j) {
+                        if (!(i % primes[j])) break;
+                  }
+                  if (j == index) {
+                        primes[index++] = i;
+                        sum += i;
+                  }
+            }
+            size_t len = index;
 
-      // initialize GPU by setting block size and number of blocks
-      int blockSize = THREADS_PER_BLOCK;
-      int nblocks = TOTAL_THREADS/blockSize + !!(TOTAL_THREADS % blockSize);
+            // initialize GPU by setting block size and number of blocks
+            int blockSize = THREADS_PER_BLOCK;
+            int nblocks = TOTAL_THREADS/blockSize + !!(TOTAL_THREADS % blockSize);
 
-      // allocate prime numbers variable on device
-      cudaMalloc((void**) &primesDevice, len * sizeof(int));
+            // allocate prime numbers variable on device
+            cudaMalloc((void**) &primesDevice, len * sizeof(int));
 
-      // copy prime numbers from host to device variable
-      cudaMemcpy(primesDevice, primes, len * sizeof(int), cudaMemcpyHostToDevice);
+            // copy prime numbers from host to device variable
+            cudaMemcpy(primesDevice, primes, len * sizeof(int), cudaMemcpyHostToDevice);
 
-      // allocate sum of prime numbers variable on device
-      cudaMalloc((void**) &primeSumsDevice, nblocks * sizeof(unsigned long long));
+            // allocate sum of prime numbers variable on device
+            cudaMalloc((void**) &primeSumsDevice, nblocks * sizeof(unsigned long long));
 
-      // call the kernel with args
-      sum_primes <<< nblocks, blockSize >>> (primesDevice, index, primeSumsDevice, TOTAL_THREADS, START_NUMBER);
+            // call the kernel with args
+            sum_primes <<< nblocks, blockSize >>> (primesDevice, index, primeSumsDevice, TOTAL_THREADS, START_NUMBER);
 
-      // allocate sum of prime numbers variable on host
-      primeSums = (unsigned long long*) malloc(nblocks * sizeof(unsigned long long));
-      
-      // copy results from device back to host
-      cudaMemcpy(primeSums, primeSumsDevice, nblocks * sizeof(unsigned long long), cudaMemcpyDeviceToHost);
-      
-      // add up the prime sums in the array of prime sums produced by the device
-      for (int i = 0; i != nblocks; ++i) {
-            sum += primeSums[i];
+            // allocate sum of prime numbers variable on host
+            primeSums = (unsigned long long*) malloc(nblocks * sizeof(unsigned long long));
+            
+            // copy results from device back to host
+            cudaMemcpy(primeSums, primeSumsDevice, nblocks * sizeof(unsigned long long), cudaMemcpyDeviceToHost);
+            
+            // add up the prime sums in the array of prime sums produced by the device
+            for (int i = 0; i != nblocks; ++i) {
+                  sum += primeSums[i];
+            }
+
+            // free allocated memory
+            free(primeSums);
+            cudaFree(primeSumsDevice);
+            cudaFree(primesDevice);
       }
-
-      // free allocated memory
-      free(primeSums);
-      cudaFree(primeSumsDevice);
-      cudaFree(primesDevice);
-
       // Print results
       printf("Sum of primes less than %d = %llu\n",END_NUMBER, sum);
 }
